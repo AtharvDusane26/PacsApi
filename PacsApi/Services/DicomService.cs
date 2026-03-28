@@ -22,7 +22,7 @@ namespace PacsApi.Services
 
             try
             {
-                var dicomFile = await DicomFile.OpenAsync(dicomStream, FileReadOption.SkipLargeTags);
+                var dicomFile = await DicomFile.OpenAsync(dicomStream, FileReadOption.Default);
                 var ds = dicomFile.Dataset;
 
                 // =========================
@@ -165,6 +165,16 @@ namespace PacsApi.Services
                 // =========================
                 // 🔥 IMAGE INSERT (FINAL STEP)
                 // =========================
+                double[] imagePosition = null;
+                double[] imageOrientation = null;
+                double[] pixelSpacing = null;
+                string[] imageType = null;
+
+                ds.TryGetValues(DicomTag.ImagePositionPatient, out imagePosition);
+                ds.TryGetValues(DicomTag.ImageOrientationPatient, out imageOrientation);
+                ds.TryGetValues(DicomTag.PixelSpacing, out pixelSpacing);
+                ds.TryGetValues(DicomTag.ImageType, out imageType);
+
                 var image = new Image
                 {
                     SopInstanceUid = sopUid,
@@ -188,9 +198,10 @@ namespace PacsApi.Services
                     PhotometricInterpretation = ds.GetSingleValueOrDefault(DicomTag.PhotometricInterpretation, ""),
                     SamplesPerPixel = ds.GetSingleValueOrDefault(DicomTag.SamplesPerPixel, 0),
 
-                    ImagePositionPatient = string.Join("\\", ds.GetValues<double>(DicomTag.ImagePositionPatient) ?? Array.Empty<double>()),
-                    ImageOrientationPatient = string.Join("\\", ds.GetValues<double>(DicomTag.ImageOrientationPatient) ?? Array.Empty<double>()),
-                    PixelSpacing = string.Join("\\", ds.GetValues<double>(DicomTag.PixelSpacing) ?? Array.Empty<double>()),
+                    // ✅ SAFE handling
+                    ImagePositionPatient = imagePosition != null ? string.Join("\\", imagePosition) : "",
+                    ImageOrientationPatient = imageOrientation != null ? string.Join("\\", imageOrientation) : "",
+                    PixelSpacing = pixelSpacing != null ? string.Join("\\", pixelSpacing) : "",
 
                     SliceThickness = ds.GetSingleValueOrDefault(DicomTag.SliceThickness, "").ToString(),
                     FrameOfReferenceUid = ds.GetSingleValueOrDefault(DicomTag.FrameOfReferenceUID, ""),
@@ -208,10 +219,9 @@ namespace PacsApi.Services
                     AcquisitionTime = ds.GetSingleValueOrDefault(DicomTag.AcquisitionTime, DateTime.MinValue),
                     FrameCount = ds.GetSingleValueOrDefault(DicomTag.NumberOfFrames, 0),
 
-                    ImageType = string.Join("\\", ds.GetValues<string>(DicomTag.ImageType) ?? Array.Empty<string>()),
+                    ImageType = imageType != null ? string.Join("\\", imageType) : "",
                     ConvolutionKernel = ds.GetSingleValueOrDefault(DicomTag.ConvolutionKernel, "")
                 };
-
                 try
                 {
                     await dbHandler.AddImage(image);
@@ -228,10 +238,11 @@ namespace PacsApi.Services
 
                 return sopUid;
             }
-            catch
+            catch (Exception ex)
             {
                 if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
                     File.Delete(filePath);
+                Console.Error.WriteLine($"Failed to process DICOM stream: {ex}");
 
                 throw;
             }
