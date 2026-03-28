@@ -3,15 +3,19 @@ using PacsApi.DataManagement;
 using PacsApi.Models;
 using PacsApi.Authentication;
 using PacsApi.DTO;
+using Logging;
+using LogLevel = Logging.LogLevel;
 
 namespace PacsApi.Services
 {
     public class DicomService
     {
         private readonly UserManager _userManager;
-        public DicomService(UserManager userManager)
+        private readonly LoggerService _logger;
+        public DicomService(UserManager userManager, LoggerService logger)
         {
             _userManager = userManager;
+            _logger = logger;
         }
 
         public async Task<string> ProcessRawDicomStreamAsync(Stream dicomStream, string userId)
@@ -78,8 +82,9 @@ namespace PacsApi.Services
                     {
                         await dbHandler.AddPatient(patient);
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        _logger.Log(LogLevel.Error, $"Duplicate patient insert for {patientId} - likely concurrent upload. Ignoring. - {ex.Message}");
                         // Another thread inserted → safe to ignore
                     }
                 }
@@ -114,8 +119,9 @@ namespace PacsApi.Services
                     {
                         await dbHandler.AddStudy(study);
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        _logger.Log(LogLevel.Error, $"Duplicate study insert for {studyUid} - likely concurrent upload. Ignoring. - {ex.Message}");
                         // ignore duplicate
                     }
                 }
@@ -148,9 +154,9 @@ namespace PacsApi.Services
                     {
                         await dbHandler.AddSeries(series);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // ignore duplicate
+                        _logger.Log(LogLevel.Error, $"Duplicate series insert for {seriesUid} - likely concurrent upload. Ignoring. - {ex.Message}");
                     }
                 }
 
@@ -227,9 +233,9 @@ namespace PacsApi.Services
                     await dbHandler.AddImage(image);
                     await dbHandler.SaveAsync(); // ✅ save only on success
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // duplicate insert → safe ignore
+                    _logger.Log(LogLevel.Error, $"Failed to insert image record for {sopUid} - {ex.Message}. Deleting file to maintain consistency.");
                     if (File.Exists(filePath))
                         File.Delete(filePath);
 
@@ -242,7 +248,7 @@ namespace PacsApi.Services
             {
                 if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
                     File.Delete(filePath);
-                Console.Error.WriteLine($"Failed to process DICOM stream: {ex}");
+                _logger.Log(LogLevel.Error, $"Failed to process DICOM stream: {ex}");
 
                 throw;
             }
@@ -269,7 +275,7 @@ namespace PacsApi.Services
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Failed to delete file {path}: {ex.Message}");
+                        _logger.Log(LogLevel.Error, $"Failed to delete file {path}: {ex.Message}");
                     }
                 }
 
@@ -281,8 +287,9 @@ namespace PacsApi.Services
                 await dbHandler.SaveAsync();
                 await transaction.CommitAsync();
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.Log(LogLevel.Error, $"Failed to delete all data: {ex.Message}. Rolling back transaction.");
                 await transaction.RollbackAsync();
                 throw;
             }

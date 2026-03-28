@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Logging;
+using Microsoft.AspNetCore.Mvc;
 using PacsApi.Services;
 namespace PacsApi.Controllers
 {
@@ -8,11 +9,12 @@ namespace PacsApi.Controllers
     {
         private readonly Manager _manager;
         private readonly DicomService _dicomService;
-
-        public DicomController(Manager manager, DicomService dicomService)
+       private readonly LoggerService _logger;
+        public DicomController(Manager manager, DicomService dicomService, LoggerService logger)
         {
             _manager = manager;
             _dicomService = dicomService;
+            _logger = logger;
         }
 
         // ================= LOGIN =================
@@ -32,6 +34,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"Login failed for username: {username}. Error: {ex.Message}");
                 return Unauthorized(new
                 {
                     message = "Login failed",
@@ -56,6 +59,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"Logout failed for userId: {userId}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -81,6 +85,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"Upload failed for userId: {userId}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -102,6 +107,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"GetTotalFiles failed for userId: {userId}, batchGroupId: {batchGroupId}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -120,6 +126,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"RemoveBatch failed for userId: {userId}, batchGroupId: {batchGroupId}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -136,6 +143,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"GetStudies failed for userId: {userId}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -150,6 +158,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"GetImages failed for userId: {userId}, studyUid: {studyUid}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -168,6 +177,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"GetImageFile failed for userId: {userId}, sopUid: {sopUid}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }
@@ -186,6 +196,7 @@ namespace PacsApi.Controllers
             }
             catch (Exception ex)
             {
+                _logger.Log(Logging.LogLevel.Error, $"DeleteAll failed for userId: {userId}. Error: {ex.Message}");
                 return StatusCode(500, ex.Message);
             }
         }

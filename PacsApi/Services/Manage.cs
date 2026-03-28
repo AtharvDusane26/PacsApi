@@ -1,4 +1,5 @@
-﻿using PacsApi.Authentication;
+﻿using Logging;
+using PacsApi.Authentication;
 using PacsApi.DataBank;
 using PacsApi.DTO;
 
@@ -8,11 +9,13 @@ namespace PacsApi.Services
     {
         private readonly UserManager _userManager;
         private readonly BatchManager _batchManager;
+        private readonly LoggerService _logger;
 
-        public Manager(UserManager userManager, BatchManager batchManager)
+        public Manager(UserManager userManager, BatchManager batchManager, LoggerService logger)
         {
             _userManager = userManager;
             _batchManager = batchManager;
+            _logger = logger;
         }
 
         // ================= LOGIN =================
@@ -35,9 +38,12 @@ namespace PacsApi.Services
             {
                 var user = _userManager.GetUser(userId);
                 if (user == null)
+                {
+                    _logger.Log(Logging.LogLevel.Error, $"Unauthorized access attempt with userId: {userId}");
                     throw new UnauthorizedAccessException("User not found");
+                }
                 else
-                    _userManager.StartUserSession(user.Username,"PACSAPI2026TEST");
+                    _userManager.StartUserSession(user.Username, "PACSAPI2026TEST");
             }
         }
 
@@ -48,7 +54,10 @@ namespace PacsApi.Services
             ValidateUser(userId);
 
             if (files == null || files.Count == 0)
+            {
+                _logger.Log(Logging.LogLevel.Error, $"User {userId} attempted to upload with no files.");
                 throw new Exception("No files uploaded");
+            }
 
             // 🔥 returns batchGroupId
              await _batchManager.CreateBatch(files, userId, dicomService);

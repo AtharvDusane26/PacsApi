@@ -1,3 +1,4 @@
+using Logging;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using PacsApi;
@@ -47,6 +48,10 @@ builder.Services.AddSingleton<UserManager>();
 builder.Services.AddSingleton<BatchManager>();
 builder.Services.AddSingleton<Manager>();
 
+builder.Services.AddSingleton<LoggerService>(sp =>
+{
+    return new LoggerService(LoggerType.File); // or Console
+});
 // =========================
 // 🔥 CONTROLLERS + CORS
 // =========================

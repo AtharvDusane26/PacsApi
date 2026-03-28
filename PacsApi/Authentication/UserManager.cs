@@ -1,4 +1,5 @@
-﻿using PacsApi.Context;
+﻿using Logging;
+using PacsApi.Context;
 using System.Globalization;
 
 namespace PacsApi.Authentication
@@ -8,11 +9,13 @@ namespace PacsApi.Authentication
         private readonly List<User> _users;
         private readonly Dictionary<User, PacsDbContext> _userDbContexts;
         private readonly PacsDbContextFactory _pacsDbContextFactory;
-        public UserManager(PacsDbContextFactory pacsDbContextFactory)
+        private readonly LoggerService _logger;
+        public UserManager(PacsDbContextFactory pacsDbContextFactory, LoggerService logger)
         {
             _pacsDbContextFactory = pacsDbContextFactory;
             _users = new List<User>();
             _userDbContexts = new Dictionary<User, PacsDbContext>();
+            _logger = logger;
         }
         private void RegisterValidateUser(string name, string token)
         {
@@ -28,6 +31,7 @@ namespace PacsApi.Authentication
             }
             else
             {
+                _logger.Log(Logging.LogLevel.Error, $"Failed login attempt for user {name} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 throw new UnauthorizedAccessException("Invalid token");
             }
         }
@@ -37,6 +41,7 @@ namespace PacsApi.Authentication
             if (user != null)
             {
                 user.StartSession(token);
+                _logger.Log(Logging.LogLevel.Info, $"{name} session started at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 return user.Id;
             }
             else
@@ -55,6 +60,7 @@ namespace PacsApi.Authentication
             }
             else
             {
+                _logger.Log(Logging.LogLevel.Error, $"Attempt to access user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 throw new UnauthorizedAccessException("User not found");
             }
         }
@@ -67,10 +73,12 @@ namespace PacsApi.Authentication
                 _userDbContexts.Remove(user);
                 _users.Remove(user);
                 user.EndSession();
+                _logger.Log(Logging.LogLevel.Info, $"{user.Username} session ended at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 user = null;
             }
             else
             {
+                _logger.Log(Logging.LogLevel.Error, $"Attempt to end session for user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 throw new UnauthorizedAccessException("User not found");
             }
         }
@@ -86,6 +94,7 @@ namespace PacsApi.Authentication
             }
             else
             {
+                _logger.Log(Logging.LogLevel.Error, $"Attempt to validate session for user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 throw new UnauthorizedAccessException("User not found");
             }
             return true;
@@ -101,11 +110,13 @@ namespace PacsApi.Authentication
                 }
                 else
                 {
+                    _logger.Log(Logging.LogLevel.Error, $"Attempt to access DB context for inactive session of user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                     throw new UnauthorizedAccessException("Session is not active");
                 }
             }
             else
             {
+                _logger.Log(Logging.LogLevel.Error, $"Attempt to access DB context for user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 throw new UnauthorizedAccessException("User not found");
             }
         }
@@ -118,9 +129,11 @@ namespace PacsApi.Authentication
                 _userDbContexts[user]?.Dispose();
                 _userDbContexts.Remove(user);
                 _users.Remove(user);
+                _logger.Log(Logging.LogLevel.Info, $"User with id {id} removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
             }
             else
             {
+                _logger.Log(Logging.LogLevel.Error, $"Attempt to remove user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
                 throw new UnauthorizedAccessException("User not found");
             }
         }
@@ -133,6 +146,7 @@ namespace PacsApi.Authentication
             }
             _userDbContexts.Clear();
             _users.Clear();
+            _logger.Log(Logging.LogLevel.Info, $"All users removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");  
         }
     }
 }

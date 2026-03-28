@@ -1,4 +1,5 @@
-﻿using PacsApi.Context;
+﻿using Logging;
+using PacsApi.Context;
 using PacsApi.DTO;
 using PacsApi.Services;
 using System.Collections.Concurrent;
@@ -10,7 +11,12 @@ namespace PacsApi.DataBank
         // userId → lock (ensures sequential processing per user)
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _userLocks
             = new();
+        private readonly LoggerService _logger;
 
+        public BatchManager(LoggerService logger)
+        {
+            _logger = logger;
+        }
         // ================= CREATE =================
 
         public async Task<string> CreateBatch(List<IFormFile> files, string userId, DicomService dicomService)
@@ -33,9 +39,9 @@ namespace PacsApi.DataBank
                             file.GetStream(),
                             userId);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // log error if needed
+                        _logger.Log(Logging.LogLevel.Error, $"Error processing DICOM stream for user {userId}: {ex.Message}");
                     }
                 }
             }

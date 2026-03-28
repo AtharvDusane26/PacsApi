@@ -20,7 +20,9 @@ namespace PacsApi.DataBank
         public List<Bucket> GetBuckets()
         {
             if (_dicomStreams == null)
+            {
                 throw new InvalidOperationException("Batch not created. Call Create() first.");
+            }
             return _dicomStreams;
         }
         public int Count => _dicomStreams?.Count ?? 0;
