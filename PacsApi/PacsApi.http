@@ -1,0 +1,6 @@
+@PacsApi_HostAddress = http://localhost:5044
+
+GET {{PacsApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
