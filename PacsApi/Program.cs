@@ -1,46 +1,29 @@
 using Logging;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
 using PacsApi;
 using PacsApi.Authentication;
 using PacsApi.Context;
 using PacsApi.DataBank;
 using PacsApi.DataManagement;
 using PacsApi.Services;
-using SQLitePCL;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// =========================
-// 🔥 SQLite Init
-// =========================
-Batteries.Init();
 
-// =========================
-// 🔥 DB CONTEXT (for normal EF usage)
-// =========================
-var dbPath = Path.Combine(
-    GeneralSettings.BaseDirectory,
-    GeneralSettings.DatabaseName);
+//  DB CONTEXT (for normal EF usage)
 
 builder.Services.AddDbContext<PacsDbContext>(options =>
-    options.UseSqlite($"Data Source={dbPath}"));
+    options.UseSqlServer($"{GeneralSettings.ConnectionString}"));
 
-// =========================
-// 🔥 CORE SERVICES
-// =========================
-
-// DB Handler (uses DbContext)
-//builder.Services.AddScoped<IDbHandler, DBHandler>();
 
 // DICOM Processing
 builder.Services.AddScoped<DicomService>();
 
-// =========================
-// 🔥 NEW ARCHITECTURE SERVICES
-// =========================
+//  NEW ARCHITECTURE SERVICES
 
-// 🔥 REQUIRED (Fix for your error)
+// REQUIRED (Fix for your error)
 builder.Services.AddSingleton<PacsDbContextFactory>();
 
 // User + Batch + Manager (stateful services)
@@ -50,11 +33,9 @@ builder.Services.AddSingleton<Manager>();
 
 builder.Services.AddSingleton<LoggerService>(sp =>
 {
-    return new LoggerService(LoggerType.File); // or Console
+    return new LoggerService(LoggerType.Console); // or Console
 });
-// =========================
-// 🔥 CONTROLLERS + CORS
-// =========================
+//  CONTROLLERS + CORS
 builder.Services.AddControllers();
 
 builder.Services.AddOpenApi();
@@ -77,20 +58,16 @@ builder.Services.Configure<FormOptions>(options =>
 });
 
 
-// =========================
-// 🔥 BUILD APP
-// =========================
 var app = builder.Build();
 
 app.UseCors("AllowAll");
 using (var scope = app.Services.CreateScope())
 {
+    await Battries.Init();
+
     var db = scope.ServiceProvider.GetRequiredService<PacsDbContext>();
     db.Database.Migrate();
 }
-// =========================
-// 🔥 PIPELINE
-// =========================
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

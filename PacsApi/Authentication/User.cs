@@ -6,7 +6,7 @@ namespace PacsApi.Authentication
     {
         private string _id;
         private string _username;
-        private readonly string _token = "PACSAPI2026TEST";
+        private readonly string _token = GeneralSettings.ApiToken;
         private readonly TimeSpan _sessionDuration = TimeSpan.FromMinutes(20);
         private bool _isSessionActive;
         public Action SessionTimeOut;

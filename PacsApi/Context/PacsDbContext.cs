@@ -74,13 +74,8 @@ namespace PacsApi.Context
     {
         public PacsDbContext CreateDbContext(string[] args)
         {
-            var dbPath = Path.Combine(
-                GeneralSettings.
-                BaseDirectory,
-                GeneralSettings.DatabaseName);
-
             var optionsBuilder = new DbContextOptionsBuilder<PacsDbContext>();
-            optionsBuilder.UseSqlite($"Data Source={dbPath}");
+            optionsBuilder.UseSqlServer($"{GeneralSettings.ConnectionString}");
 
             return new PacsDbContext(optionsBuilder.Options);
         }

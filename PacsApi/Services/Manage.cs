@@ -43,7 +43,7 @@ namespace PacsApi.Services
                     throw new UnauthorizedAccessException("User not found");
                 }
                 else
-                    _userManager.StartUserSession(user.Username, "PACSAPI2026TEST");
+                    _userManager.StartUserSession(user.Username, GeneralSettings.ApiToken);
             }
         }
 

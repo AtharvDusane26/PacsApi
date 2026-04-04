@@ -7,9 +7,10 @@ namespace PacsApi.DataManagement
     using Microsoft.EntityFrameworkCore;
     using PacsApi.DTO;
 
-    public class DBHandler
+    public class DBHandler : IDisposable
     {
-        private readonly PacsDbContext _context;
+        private PacsDbContext _context;
+        private bool _disposedValue;
 
         public DBHandler(PacsDbContext context)
         {
@@ -39,20 +40,22 @@ namespace PacsApi.DataManagement
 
         public void UpdatePatient(Patient patient)
         {
-            _context.Patients.Attach(patient);
-            _context.Entry(patient).State = EntityState.Modified;
+            _context.Patients.Update(patient);
         }
 
-        public async Task DeletePatientById(string id)
+        public Task DeletePatientById(string id)
         {
             var patient = new Patient { PatientId = id };
             _context.Patients.Attach(patient);
             _context.Patients.Remove(patient);
+            return Task.CompletedTask;
         }
+
         public async Task DeleteAllPatients()
         {
             await _context.Patients.ExecuteDeleteAsync();
         }
+
         // ==================== STUDY ====================
 
         public async Task AddStudy(Study study)
@@ -81,42 +84,13 @@ namespace PacsApi.DataManagement
                 .AsNoTracking()
                 .ToListAsync();
         }
+
+        // 🔥 FULLY OPTIMIZED (Single SQL Query)
         public async Task<List<StudyView>> GetAllStudyView()
         {
-            // Step 1: Load base studies + patient
-            var studies = await _context.Studies
+            return await _context.Studies
                 .AsNoTracking()
-                .Include(s => s.Patient)
-                .ToListAsync();
-
-            var studyUids = studies.Select(s => s.StudyInstanceUid).ToList();
-
-            // Step 2: Load series separately
-            var seriesList = await _context.Series
-                .AsNoTracking()
-                .Where(s => studyUids.Contains(s.StudyInstanceUid))
-                .ToListAsync();
-
-            var seriesUids = seriesList.Select(s => s.SeriesInstanceUid).ToList();
-
-            // Step 3: Load images separately
-            var images = await _context.Images
-                .AsNoTracking()
-                .Where(i => seriesUids.Contains(i.SeriesInstanceUid))
-                .ToListAsync();
-
-            // Step 4: Build result in memory
-            return studies.Select(s =>
-            {
-                var studySeries = seriesList
-                    .Where(x => x.StudyInstanceUid == s.StudyInstanceUid)
-                    .ToList();
-
-                var studyImages = images
-                    .Where(x => x.StudyInstanceUid == s.StudyInstanceUid)
-                    .ToList();
-
-                return new StudyView
+                .Select(s => new StudyView
                 {
                     PatientId = s.PatientId,
                     PatientName = s.Patient.PatientName,
@@ -127,18 +101,29 @@ namespace PacsApi.DataManagement
                     StudyDate = s.StudyDate,
                     StudyDescription = s.StudyDescription,
 
-                    SeriesCount = studySeries.Count,
-                    ImageCount = studyImages.Count,
+                    SeriesCount = _context.Series
+                        .Count(se => se.StudyInstanceUid == s.StudyInstanceUid),
 
-                    Modalities = string.Join(",", studySeries.Select(x => x.Modality).Distinct()),
-                    BodyPartExamined = studySeries.FirstOrDefault()?.BodyPartExamined
-                };
-            }).ToList();
+                    ImageCount = _context.Images
+                        .Count(i => i.StudyInstanceUid == s.StudyInstanceUid),
+
+                    Modalities = string.Join(",",
+                        _context.Series
+                            .Where(se => se.StudyInstanceUid == s.StudyInstanceUid)
+                            .Select(se => se.Modality)
+                            .Distinct()),
+
+                    BodyPartExamined = _context.Series
+                        .Where(se => se.StudyInstanceUid == s.StudyInstanceUid)
+                        .Select(se => se.BodyPartExamined)
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
         }
+
         public void UpdateStudy(Study study)
         {
-            _context.Studies.Attach(study);
-            _context.Entry(study).State = EntityState.Modified;
+            _context.Studies.Update(study);
         }
 
         public Task DeleteStudyById(string id)
@@ -148,6 +133,7 @@ namespace PacsApi.DataManagement
             _context.Studies.Remove(study);
             return Task.CompletedTask;
         }
+
         public async Task<List<string>> GetStudyInstanceUidsByPatientId(string patientId)
         {
             return await _context.Studies
@@ -156,6 +142,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.StudyInstanceUid)
                 .ToListAsync();
         }
+
         public async Task<List<string>> GetAllStudyInstanceUids()
         {
             return await _context.Studies
@@ -163,10 +150,12 @@ namespace PacsApi.DataManagement
                 .Select(x => x.StudyInstanceUid)
                 .ToListAsync();
         }
+
         public async Task DeleteAllStudies()
         {
             await _context.Studies.ExecuteDeleteAsync();
         }
+
         // ==================== SERIES ====================
 
         public async Task AddSeries(Series series)
@@ -191,8 +180,7 @@ namespace PacsApi.DataManagement
 
         public void UpdateSeries(Series series)
         {
-            _context.Series.Attach(series);
-            _context.Entry(series).State = EntityState.Modified;
+            _context.Series.Update(series);
         }
 
         public Task DeleteSeriesById(string id)
@@ -202,6 +190,7 @@ namespace PacsApi.DataManagement
             _context.Series.Remove(series);
             return Task.CompletedTask;
         }
+
         public async Task<List<string>> GetAllSeriesInstanceUids()
         {
             return await _context.Series
@@ -209,6 +198,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.SeriesInstanceUid)
                 .ToListAsync();
         }
+
         public async Task<List<string>> GetSeriesInstanceUidsByStudyInstanceUid(string studyInstanceUid)
         {
             return await _context.Series
@@ -217,6 +207,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.SeriesInstanceUid)
                 .ToListAsync();
         }
+
         public async Task DeleteAllSeries()
         {
             await _context.Series.ExecuteDeleteAsync();
@@ -235,34 +226,39 @@ namespace PacsApi.DataManagement
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.SopInstanceUid == sopInstanceUid);
         }
+
         public async Task<bool> ImageExist(string sopInstanceUid)
         {
             return await _context.Images
-                 .AsNoTracking()
-                 .AnyAsync(x => x.SopInstanceUid == sopInstanceUid);
+                .AsNoTracking()
+                .AnyAsync(x => x.SopInstanceUid == sopInstanceUid);
         }
+
         public async Task<List<Image>> GetImagesBySeriesInstanceUid(string seriesInstanceUid)
         {
             return await _context.Images
                 .AsNoTracking()
                 .Where(x => x.SeriesInstanceUid == seriesInstanceUid)
-                .OrderBy(x => x.InstanceNumber) // ✅ important for correct order
+                .OrderBy(x => x.InstanceNumber)
                 .ToListAsync();
         }
+
         public async Task<List<Image>> GetImagesByStudyInstanceUid(string studyInstanceUid)
         {
             return await _context.Images
                 .AsNoTracking()
                 .Where(x => x.StudyInstanceUid == studyInstanceUid)
-                .OrderBy(x => x.InstanceNumber) // optional but good
+                .OrderBy(x => x.InstanceNumber)
                 .ToListAsync();
         }
+
         public async Task<List<Image>> GetAllImages()
         {
             return await _context.Images
                 .AsNoTracking()
                 .ToListAsync();
         }
+
         public async Task<List<ImageView>> GetImageViews(string studyInstanceUid)
         {
             return await _context.Images
@@ -278,10 +274,10 @@ namespace PacsApi.DataManagement
                 })
                 .ToListAsync();
         }
+
         public void UpdateImage(Image image)
         {
-            _context.Images.Attach(image);
-            _context.Entry(image).State = EntityState.Modified;
+            _context.Images.Update(image);
         }
 
         public Task DeleteImageById(string sopInstanceUid)
@@ -291,6 +287,7 @@ namespace PacsApi.DataManagement
             _context.Images.Remove(image);
             return Task.CompletedTask;
         }
+
         public async Task<List<string>> GetAllSopInstanceUids()
         {
             return await _context.Images
@@ -298,6 +295,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.SopInstanceUid)
                 .ToListAsync();
         }
+
         public async Task<List<string>> GetSopInstanceUidsBySeriesInstanceUid(string seriesInstanceUid)
         {
             return await _context.Images
@@ -306,6 +304,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.SopInstanceUid)
                 .ToListAsync();
         }
+
         public async Task<List<string>> GetSopInstanceUidsByStudyInstanceUid(string studyInstanceUid)
         {
             return await _context.Images
@@ -314,6 +313,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.SopInstanceUid)
                 .ToListAsync();
         }
+
         public async Task<List<string>> GetSopInstanceUidsByPatientId(string patientId)
         {
             return await _context.Images
@@ -322,14 +322,15 @@ namespace PacsApi.DataManagement
                 .Select(x => x.SopInstanceUid)
                 .ToListAsync();
         }
+
         public async Task<List<string>> GetAllImagePaths()
         {
             return await _context.Images
                 .AsNoTracking()
                 .Select(x => x.FilePath)
                 .ToListAsync();
-
         }
+
         public async Task<string?> GetImagePath(string sopInstanceUid)
         {
             return await _context.Images
@@ -338,6 +339,7 @@ namespace PacsApi.DataManagement
                 .Select(x => x.FilePath)
                 .FirstOrDefaultAsync();
         }
+
         public async Task<List<string>> GetImagePathsBySeriesInstanceUid(string seriesInstanceUid)
         {
             return await _context.Images
@@ -346,15 +348,37 @@ namespace PacsApi.DataManagement
                 .Select(x => x.FilePath)
                 .ToListAsync();
         }
+
         public async Task DeleteAllImages()
         {
             await _context.Images.ExecuteDeleteAsync();
         }
+
         // ==================== SAVE ====================
 
         public async Task SaveAsync()
         {
             await _context.SaveChangesAsync();
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposedValue)
+            {
+                if (disposing)
+                {
+                    _context.ChangeTracker.Clear();
+                    _context.Dispose();
+                    _context = null;
+                }
+
+                _disposedValue = true;
+            }
+        }
+        public void Dispose()
+        {
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
         }
     }
 }

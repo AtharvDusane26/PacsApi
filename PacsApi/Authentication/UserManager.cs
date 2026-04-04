@@ -7,14 +7,14 @@ namespace PacsApi.Authentication
     public class UserManager
     {
         private readonly List<User> _users;
-        private readonly Dictionary<User, PacsDbContext> _userDbContexts;
+        private readonly Dictionary<User, PacsDbContextFactory> _userDbContexts;
         private readonly PacsDbContextFactory _pacsDbContextFactory;
         private readonly LoggerService _logger;
         public UserManager(PacsDbContextFactory pacsDbContextFactory, LoggerService logger)
         {
             _pacsDbContextFactory = pacsDbContextFactory;
             _users = new List<User>();
-            _userDbContexts = new Dictionary<User, PacsDbContext>();
+            _userDbContexts = new Dictionary<User, PacsDbContextFactory>();
             _logger = logger;
         }
         private void RegisterValidateUser(string name, string token)
@@ -27,7 +27,7 @@ namespace PacsApi.Authentication
             if (user.ValidateToken(token))
             {
                 _users.Add(user);
-                _userDbContexts[user] = _pacsDbContextFactory.CreateDbContext(Array.Empty<string>());
+                _userDbContexts[user] = _pacsDbContextFactory;
             }
             else
             {
@@ -37,8 +37,8 @@ namespace PacsApi.Authentication
         }
         public string StartUserSession(string name, string token)
         {
-            var user = _users.FirstOrDefault(u => u.Username == name);
-            if (user != null)
+            var user = _users.FirstOrDefault(u => u.Username == name && !u.IsSessionActive);
+            if (user != null && !user.IsSessionActive)
             {
                 user.StartSession(token);
                 _logger.Log(Logging.LogLevel.Info, $"{name} session started at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
@@ -47,9 +47,8 @@ namespace PacsApi.Authentication
             else
             {
                 RegisterValidateUser(name, token);
-                StartUserSession(name, token);
+                return StartUserSession(name, token);
             }
-            return "";
         }
         public User GetUser(string id)
         {
@@ -106,7 +105,7 @@ namespace PacsApi.Authentication
             {
                 if (user.IsSessionActive)
                 {
-                    return _userDbContexts[user];
+                    return _userDbContexts[user].CreateDbContext(Array.Empty<string>());
                 }
                 else
                 {
@@ -126,7 +125,6 @@ namespace PacsApi.Authentication
             if (user != null)
             {
                 user.EndSession();
-                _userDbContexts[user]?.Dispose();
                 _userDbContexts.Remove(user);
                 _users.Remove(user);
                 _logger.Log(Logging.LogLevel.Info, $"User with id {id} removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
@@ -142,11 +140,10 @@ namespace PacsApi.Authentication
             foreach (var user in _users)
             {
                 user.EndSession();
-                _userDbContexts[user]?.Dispose();
             }
             _userDbContexts.Clear();
             _users.Clear();
-            _logger.Log(Logging.LogLevel.Info, $"All users removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");  
+            _logger.Log(Logging.LogLevel.Info, $"All users removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
         }
     }
 }
