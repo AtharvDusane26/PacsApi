@@ -7,14 +7,10 @@ namespace PacsApi.Authentication
     public class UserManager
     {
         private readonly List<User> _users;
-        private readonly Dictionary<User, PacsDbContextFactory> _userDbContexts;
-        private readonly PacsDbContextFactory _pacsDbContextFactory;
         private readonly LoggerService _logger;
-        public UserManager(PacsDbContextFactory pacsDbContextFactory, LoggerService logger)
+        public UserManager(LoggerService logger)
         {
-            _pacsDbContextFactory = pacsDbContextFactory;
             _users = new List<User>();
-            _userDbContexts = new Dictionary<User, PacsDbContextFactory>();
             _logger = logger;
         }
         private void RegisterValidateUser(string name, string token)
@@ -27,7 +23,6 @@ namespace PacsApi.Authentication
             if (user.ValidateToken(token))
             {
                 _users.Add(user);
-                _userDbContexts[user] = _pacsDbContextFactory;
             }
             else
             {
@@ -68,8 +63,6 @@ namespace PacsApi.Authentication
             var user = _users.FirstOrDefault(u => u.Id == id);
             if (user != null)
             {
-                GetUserDbContext(user.Id)?.Dispose();
-                _userDbContexts.Remove(user);
                 _users.Remove(user);
                 user.EndSession();
                 _logger.Log(Logging.LogLevel.Info, $"{user.Username} session ended at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
@@ -98,34 +91,12 @@ namespace PacsApi.Authentication
             }
             return true;
         }
-        public PacsDbContext GetUserDbContext(string id)
-        {
-            var user = _users.FirstOrDefault(u => u.Id == id);
-            if (user != null)
-            {
-                if (user.IsSessionActive)
-                {
-                    return _userDbContexts[user].CreateDbContext(Array.Empty<string>());
-                }
-                else
-                {
-                    _logger.Log(Logging.LogLevel.Error, $"Attempt to access DB context for inactive session of user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
-                    throw new UnauthorizedAccessException("Session is not active");
-                }
-            }
-            else
-            {
-                _logger.Log(Logging.LogLevel.Error, $"Attempt to access DB context for user with id {id} at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
-                throw new UnauthorizedAccessException("User not found");
-            }
-        }
         public void RemoveUser(string id)
         {
             var user = _users.FirstOrDefault(u => u.Id == id);
             if (user != null)
             {
                 user.EndSession();
-                _userDbContexts.Remove(user);
                 _users.Remove(user);
                 _logger.Log(Logging.LogLevel.Info, $"User with id {id} removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
             }
@@ -141,7 +112,6 @@ namespace PacsApi.Authentication
             {
                 user.EndSession();
             }
-            _userDbContexts.Clear();
             _users.Clear();
             _logger.Log(Logging.LogLevel.Info, $"All users removed at {DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)}");
         }
