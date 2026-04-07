@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using PacsApi;
 using PacsApi.Authentication;
 using PacsApi.Context;
-using PacsApi.DataBank;
 using PacsApi.DataManagement;
 using PacsApi.Services;
 using PacsApi.Services.Import;
@@ -37,7 +36,6 @@ builder.Services.AddScoped<ImageService>();
 // ============================
 
 builder.Services.AddSingleton<UserManager>();
-builder.Services.AddSingleton<BatchManager>();
 builder.Services.AddSingleton<Validator>();
 
 builder.Services.AddSingleton<LoggerService>(sp =>

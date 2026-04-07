@@ -1,6 +1,5 @@
 ﻿using Logging;
 using PacsApi.Authentication;
-using PacsApi.DataBank;
 using PacsApi.DTO;
 using PacsApi.Services.Import;
 

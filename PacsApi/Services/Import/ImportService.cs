@@ -2,10 +2,10 @@
 using FellowOakDicom;
 using Logging;
 using PacsApi.Authentication;
-using PacsApi.DataBank;
 using PacsApi.DataManagement;
 using PacsApi.DTO;
 using PacsApi.Models;
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using LogLevel = Logging.LogLevel;
 
@@ -14,43 +14,73 @@ namespace PacsApi.Services.Import
     public class ImportService : Service
     {
         private readonly UserManager _userManager;
-        private readonly BatchManager _batchManager;
-        public ImportService(UserManager userManager, BatchManager batchManager, LoggerService logger, IUnitOfWorkFactory unitOfWorkFactory) : base(unitOfWorkFactory, logger)
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _userLocks = new();
+        public ImportService(UserManager userManager, LoggerService logger, IUnitOfWorkFactory unitOfWorkFactory) : base(unitOfWorkFactory, logger)
         {
             _userManager = userManager;
-            _batchManager = batchManager;
 
         }
         public async Task Upload(string userId, List<IFormFile> files)
         {
-            if (files == null || files.Count == 0)
+            var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+            await userLock.WaitAsync();
+
+            try
             {
-                Logger.Log(Logging.LogLevel.Error, $"User {userId} attempted to upload with no files.");
-                throw new Exception("No files uploaded");
+                var streams = await ConvertToStreams(files);
+                foreach (var file in streams)
+                {
+                    try
+                    {
+                        await Import(file, userId);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log(Logging.LogLevel.Error, $"Error processing DICOM stream for user {userId}: {ex.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                userLock.Release();
             }
 
-            // 🔥 returns batchGroupId
-            await _batchManager.CreateBatch(files, userId, Import);
+        }
+        private async Task<List<Stream>> ConvertToStreams(List<IFormFile> files)
+        {
+            var streams = new List<Stream>();
+            await Parallel.ForEachAsync(files, async (file, ct) =>
+            {
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms, ct);
+                var bytes = ms.ToArray();
+                var stream = new MemoryStream(bytes); // 🔥 safe copy         
+                streams.Add(stream);
+            });
+            return streams;
         }
         public async Task UploadSingle(string userId, IFormFile file)
         {
-            if (file == null)
+            var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+            await userLock.WaitAsync();
+
+            try
             {
-                Logger.Log(Logging.LogLevel.Error, $"User {userId} attempted to upload a null file.");
-                throw new Exception("No file uploaded");
-            }
-            using (var stream = file.OpenReadStream())
-            {
+                if (file == null)
+                {
+                    Logger.Log(Logging.LogLevel.Error, $"User {userId} attempted to upload a null file.");
+                    throw new Exception("No file uploaded");
+                }
+                using var ms = new MemoryStream();
+                await file.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+                var stream = new MemoryStream(bytes); // 🔥 safe copy             
                 await Import(stream, userId);
             }
-        }
-        public int GetTotalFiles(string userId, string batchGroupId)
-        {
-            return _batchManager.GetTotalFiles(userId, batchGroupId);
-        }
-        public void RemoveBatch(string userId, string batchGroupId)
-        {
-            _batchManager.RemoveBatchGroup(userId, batchGroupId);
+            finally
+            {
+                userLock.Release();
+            }
         }
         private async Task<string> Import(Stream dicomStream, string userId)
         {

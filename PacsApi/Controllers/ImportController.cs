@@ -43,37 +43,5 @@ namespace PacsApi.Controllers
                 return StatusCode(500, ex.Message);
             }
         }
-
-        [HttpGet("batch-total")]
-        public IActionResult GetTotalFiles(string userId, string batchGroupId)
-        {
-            try
-            {
-                var total = _importService.GetTotalFiles(userId, batchGroupId);
-
-                return Ok(new { totalFiles = total });
-            }
-            catch (Exception ex)
-            {
-                _logger.Log(Logging.LogLevel.Error, $"GetTotalFiles failed: {ex.Message}");
-                return StatusCode(500, ex.Message);
-            }
-        }
-
-        [HttpDelete("batch")]
-        public IActionResult RemoveBatch(string userId, string batchGroupId)
-        {
-            try
-            {
-                _importService.RemoveBatch(userId, batchGroupId);
-
-                return Ok(new { message = "Batch removed successfully" });
-            }
-            catch (Exception ex)
-            {
-                _logger.Log(Logging.LogLevel.Error, $"RemoveBatch failed: {ex.Message}");
-                return StatusCode(500, ex.Message);
-            }
-        }
     }
 }
