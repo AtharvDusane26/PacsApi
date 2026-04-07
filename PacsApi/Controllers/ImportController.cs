@@ -11,13 +11,13 @@ namespace PacsApi.Controllers
     public class ImportController : ControllerBase
     {
         private readonly Validator _validator;
-        private readonly ImportService _dicomService;
+        private readonly ImportService _importService;
         private readonly LoggerService _logger;
 
         public ImportController(Validator validator, ImportService dicomService, LoggerService logger)
         {
             _validator = validator;
-            _dicomService = dicomService;
+            _importService = dicomService;
             _logger = logger;
         }
 
@@ -33,7 +33,7 @@ namespace PacsApi.Controllers
             try
             {
                 _validator.ValidateUser(userId);
-                await _dicomService.Upload(userId, files);
+                await _importService.Upload(userId, files);
 
                 return Ok(new { message = "Files uploaded successfully" });
             }
@@ -49,7 +49,7 @@ namespace PacsApi.Controllers
         {
             try
             {
-                var total = _dicomService.GetTotalFiles(userId, batchGroupId);
+                var total = _importService.GetTotalFiles(userId, batchGroupId);
 
                 return Ok(new { totalFiles = total });
             }
@@ -65,7 +65,7 @@ namespace PacsApi.Controllers
         {
             try
             {
-                _dicomService.RemoveBatch(userId, batchGroupId);
+                _importService.RemoveBatch(userId, batchGroupId);
 
                 return Ok(new { message = "Batch removed successfully" });
             }
