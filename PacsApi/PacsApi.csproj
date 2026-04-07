@@ -24,6 +24,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="EFCore.lib">
+      <HintPath>..\References\EFCore.lib.dll</HintPath>
+    </Reference>
     <Reference Include="Logging">
       <HintPath>..\References\Logging.dll</HintPath>
     </Reference>

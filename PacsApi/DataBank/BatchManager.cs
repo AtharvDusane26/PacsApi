@@ -1,7 +1,7 @@
 ﻿using Logging;
 using PacsApi.Context;
 using PacsApi.DTO;
-using PacsApi.Services;
+using PacsApi.Services.Import;
 using System.Collections.Concurrent;
 
 namespace PacsApi.DataBank
@@ -19,12 +19,12 @@ namespace PacsApi.DataBank
         }
         // ================= CREATE =================
 
-        public async Task<string> CreateBatch(List<IFormFile> files, string userId, DicomService dicomService)
+        public async Task<string> CreateBatch(List<IFormFile> files, string userId, Func<Stream, string, Task> importAction)
         {
             var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
 
             var batch = new Batch();
-            batch.Create(files);
+            await batch.Create(files);
             batch.SetOwner(userId);
 
             await userLock.WaitAsync();
@@ -35,9 +35,7 @@ namespace PacsApi.DataBank
                 {
                     try
                     {
-                        await dicomService.ProcessRawDicomStreamAsync(
-                            file.GetStream(),
-                            userId);
+                       await importAction(file.GetStream(), userId);
                     }
                     catch (Exception ex)
                     {
@@ -68,7 +66,7 @@ namespace PacsApi.DataBank
         public async Task<UploadProgress> ProcessNextBatch(
             string userId,
             string batchGroupId,
-            DicomService dicomService)
+            ImportService dicomService)
         {
             // no-op (already processed in CreateBatch)
             return new UploadProgress

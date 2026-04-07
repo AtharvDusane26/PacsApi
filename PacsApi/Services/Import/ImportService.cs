@@ -1,46 +1,78 @@
-﻿using FellowOakDicom;
-using PacsApi.DataManagement;
-using PacsApi.Models;
-using PacsApi.Authentication;
-using PacsApi.DTO;
+﻿using EFCore.lib.Utility;
+using FellowOakDicom;
 using Logging;
+using PacsApi.Authentication;
+using PacsApi.DataBank;
+using PacsApi.DataManagement;
+using PacsApi.DTO;
+using PacsApi.Models;
+using System.ComponentModel.DataAnnotations;
 using LogLevel = Logging.LogLevel;
 
-namespace PacsApi.Services
+namespace PacsApi.Services.Import
 {
-    public class DicomService
+    public class ImportService : Service
     {
         private readonly UserManager _userManager;
-        private readonly LoggerService _logger;
-        public DicomService(UserManager userManager, LoggerService logger)
+        private readonly BatchManager _batchManager;
+        public ImportService(UserManager userManager, BatchManager batchManager, LoggerService logger, IUnitOfWorkFactory unitOfWorkFactory) : base(unitOfWorkFactory, logger)
         {
             _userManager = userManager;
-            _logger = logger;
-        }
+            _batchManager = batchManager;
 
-        public async Task<string> ProcessRawDicomStreamAsync(Stream dicomStream, string userId)
+        }
+        public async Task Upload(string userId, List<IFormFile> files)
+        {
+            if (files == null || files.Count == 0)
+            {
+                Logger.Log(Logging.LogLevel.Error, $"User {userId} attempted to upload with no files.");
+                throw new Exception("No files uploaded");
+            }
+
+            // 🔥 returns batchGroupId
+            await _batchManager.CreateBatch(files, userId, Import);
+        }
+        public async Task UploadSingle(string userId, IFormFile file)
+        {
+            if (file == null)
+            {
+                Logger.Log(Logging.LogLevel.Error, $"User {userId} attempted to upload a null file.");
+                throw new Exception("No file uploaded");
+            }
+            using (var stream = file.OpenReadStream())
+            {
+                await Import(stream, userId);
+            }
+        }
+        public int GetTotalFiles(string userId, string batchGroupId)
+        {
+            return _batchManager.GetTotalFiles(userId, batchGroupId);
+        }
+        public void RemoveBatch(string userId, string batchGroupId)
+        {
+            _batchManager.RemoveBatchGroup(userId, batchGroupId);
+        }
+        private async Task<string> Import(Stream dicomStream, string userId)
         {
             string filePath = string.Empty;
+
             var context = _userManager.GetUserDbContext(userId);
-            using (var dbHandler = new DBHandler(context))
+            using (var unitOfWork = Init(context))
             {
+                var dbHandler = new DBHandler(unitOfWork, context);
+
+                await dbHandler.BeginTransactionAsync();
 
                 try
                 {
                     var dicomFile = await DicomFile.OpenAsync(dicomStream, FileReadOption.Default);
                     var ds = dicomFile.Dataset;
 
-                    // =========================
-                    // 🔥 Extract once (avoid repeated calls)
-                    // =========================
                     string patientId = ds.GetSingleValueOrDefault(DicomTag.PatientID, "");
                     string studyUid = ds.GetSingleValueOrDefault(DicomTag.StudyInstanceUID, "");
                     string seriesUid = ds.GetSingleValueOrDefault(DicomTag.SeriesInstanceUID, "");
                     string sopUid = ds.GetSingleValueOrDefault(DicomTag.SOPInstanceUID, "");
 
-                    // =========================
-                    // 🔥 Build file path
-                    // =========================
                     string root = Path.Combine(
                         GeneralSettings.BaseDirectory,
                         "Images",
@@ -52,28 +84,21 @@ namespace PacsApi.Services
 
                     filePath = Path.Combine(root, $"{sopUid}.dic");
 
-                    // =========================
-                    // 🔥 Fast exit (file exists)
-                    // =========================
                     if (File.Exists(filePath))
                         File.Delete(filePath);
-                    // =========================
-                    // 🔥 SAVE FILE (safe)
-                    // =========================
+
                     using (var fs = new FileStream(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                     {
                         await dicomFile.SaveAsync(fs);
                     }
 
-                    // =========================
-                    // 🔥 DB existence check (lightweight)
-                    // =========================
                     if (await dbHandler.ImageExist(sopUid))
+                    {
+                        await dbHandler.RollbackAsync();
                         return sopUid;
+                    }
 
-                    // =========================
-                    // 🔥 PATIENT (UPSERT style)
-                    // =========================
+                    // ================= PATIENT =================
                     var patient = await dbHandler.GetPatientById(patientId);
                     if (patient == null)
                     {
@@ -92,14 +117,11 @@ namespace PacsApi.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.Log(LogLevel.Error, $"Duplicate patient insert for {patientId} - likely concurrent upload. Ignoring. - {ex.Message}");
-                            // Another thread inserted → safe to ignore
+                            Logger.Log(LogLevel.Error, $"Duplicate patient insert for {patientId} - {ex.Message}");
                         }
                     }
 
-                    // =========================
-                    // 🔥 STUDY
-                    // =========================
+                    // ================= STUDY =================
                     var study = await dbHandler.GetStudyById(studyUid);
                     if (study == null)
                     {
@@ -129,14 +151,11 @@ namespace PacsApi.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.Log(LogLevel.Error, $"Duplicate study insert for {studyUid} - likely concurrent upload. Ignoring. - {ex.Message}");
-                            // ignore duplicate
+                            Logger.Log(LogLevel.Error, $"Duplicate study insert for {studyUid} - {ex.Message}");
                         }
                     }
 
-                    // =========================
-                    // 🔥 SERIES
-                    // =========================
+                    // ================= SERIES =================
                     var series = await dbHandler.GetSeriesById(seriesUid);
                     if (series == null)
                     {
@@ -164,15 +183,11 @@ namespace PacsApi.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.Log(LogLevel.Error, $"Duplicate series insert for {seriesUid} - likely concurrent upload. Ignoring. - {ex.Message}");
+                            Logger.Log(LogLevel.Error, $"Duplicate series insert for {seriesUid} - {ex.Message}");
                         }
                     }
 
-
-
-                    // =========================
-                    // 🔥 IMAGE INSERT (FINAL STEP)
-                    // =========================
+                    // ================= IMAGE =================
                     double[] imagePosition = null;
                     double[] imageOrientation = null;
                     double[] pixelSpacing = null;
@@ -206,7 +221,6 @@ namespace PacsApi.Services
                         PhotometricInterpretation = ds.GetSingleValueOrDefault(DicomTag.PhotometricInterpretation, ""),
                         SamplesPerPixel = ds.GetSingleValueOrDefault(DicomTag.SamplesPerPixel, 0),
 
-                        // ✅ SAFE handling
                         ImagePositionPatient = imagePosition != null ? string.Join("\\", imagePosition) : "",
                         ImageOrientationPatient = imageOrientation != null ? string.Join("\\", imageOrientation) : "",
                         PixelSpacing = pixelSpacing != null ? string.Join("\\", pixelSpacing) : "",
@@ -230,14 +244,19 @@ namespace PacsApi.Services
                         ImageType = imageType != null ? string.Join("\\", imageType) : "",
                         ConvolutionKernel = ds.GetSingleValueOrDefault(DicomTag.ConvolutionKernel, "")
                     };
+
                     try
                     {
                         await dbHandler.AddImage(image);
-                        await dbHandler.SaveAsync(); // ✅ save only on success
+
+                        await dbHandler.CommitAsync(); // 🔥 SINGLE COMMIT POINT
                     }
                     catch (Exception ex)
                     {
-                        _logger.Log(LogLevel.Error, $"Failed to insert image record for {sopUid} - {ex.Message}. Deleting file to maintain consistency.");
+                        await dbHandler.RollbackAsync();
+
+                        Logger.Log(LogLevel.Error, $"Failed image insert {sopUid} - {ex.Message}");
+
                         if (File.Exists(filePath))
                             File.Delete(filePath);
 
@@ -248,85 +267,16 @@ namespace PacsApi.Services
                 }
                 catch (Exception ex)
                 {
+                    await dbHandler.RollbackAsync();
+
                     if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
                         File.Delete(filePath);
-                    _logger.Log(LogLevel.Error, $"Failed to process DICOM stream: {ex}");
 
+                    Logger.Log(LogLevel.Error, $"Failed to process DICOM stream: {ex}");
                     throw;
                 }
             }
         }
 
-        public async Task DeleteAll(string userId)
-        {
-            var context = _userManager.GetUserDbContext(userId);
-            using (var dbHandler = new DBHandler(context))
-            {
-                await using var transaction = await context.Database.BeginTransactionAsync();
-
-                try
-                {
-                    // Step 1: Get only file paths (NOT full images)
-                    var filePaths = await dbHandler.GetAllImagePaths();
-
-                    // Step 2: Delete files safely
-                    foreach (var path in filePaths)
-                    {
-                        try
-                        {
-                            if (File.Exists(path))
-                                File.Delete(path);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.Log(LogLevel.Error, $"Failed to delete file {path}: {ex.Message}");
-                        }
-                    }
-
-                    // Step 3: Bulk delete (EF Core 7+ 🚀)
-                    await dbHandler.DeleteAllImages();
-                    await dbHandler.DeleteAllSeries();
-                    await dbHandler.DeleteAllStudies();
-                    await dbHandler.DeleteAllPatients();
-                    await dbHandler.SaveAsync();
-                    await transaction.CommitAsync();
-                }
-                catch (Exception ex)
-                {
-                    _logger.Log(LogLevel.Error, $"Failed to delete all data: {ex.Message}. Rolling back transaction.");
-                    await transaction.RollbackAsync();
-                    throw;
-                }
-            }
-        }
-        public async Task<List<StudyView>> GetAllStudies(string userId)
-        {
-            var context = _userManager.GetUserDbContext(userId);
-            using (var dbHandler = new DBHandler(context))
-            {
-                return await dbHandler.GetAllStudyView();
-            }
-        }
-        public async Task<List<ImageView>> GetImages(string studyUid, string userId)
-        {
-            using (var context = _userManager.GetUserDbContext(userId))
-            using (var dbHandler = new DBHandler(context))
-            {
-                return await dbHandler.GetImageViews(studyUid);
-            }
-        }
-        public async Task<FileStream?> GetImageFile(string sopUid, string userId)
-        {
-            var context = _userManager.GetUserDbContext(userId);
-            using (var dbHandler = new DBHandler(context))
-            {
-                var filePath = await dbHandler.GetImagePath(sopUid);
-
-                if (filePath == null || !File.Exists(filePath))
-                    return null;
-
-                return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            }
-        }
     }
 }

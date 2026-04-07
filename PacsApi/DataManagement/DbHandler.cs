@@ -1,94 +1,86 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using PacsApi.Context;
 using PacsApi.Models;
-
+using PacsApi.DTO;
+using EFCore.lib.Utility;
 namespace PacsApi.DataManagement
 {
-    using Microsoft.EntityFrameworkCore;
-    using PacsApi.DTO;
-
-    public class DBHandler : IDisposable
+    public class DBHandler : Handler<PacsDbContext>
     {
-        private PacsDbContext _context;
-        private bool _disposedValue;
+        public DBHandler(IUnitOfWork unitOfWork, PacsDbContext context) : base(unitOfWork, context) { }
 
-        public DBHandler(PacsDbContext context)
-        {
-            _context = context;
-        }
 
-        // ==================== PATIENT ====================
+        #region ==================== PATIENT ====================
 
         public async Task AddPatient(Patient patient)
         {
-            await _context.Patients.AddAsync(patient);
+            await UnitOfWork.Repository<Patient>().AddAsync(patient);
         }
 
         public async Task<Patient?> GetPatientById(string id)
         {
-            return await _context.Patients
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.PatientId == id);
+            return await UnitOfWork
+                .Repository<Patient>()
+                .SingleOrDefaultAsync(x => x.PatientId == id);
         }
 
         public async Task<List<Patient>> GetAllPatients()
         {
-            return await _context.Patients
-                .AsNoTracking()
-                .ToListAsync();
+            return await UnitOfWork
+                .Repository<Patient>()
+                .GetAllAsync();
         }
 
         public void UpdatePatient(Patient patient)
         {
-            _context.Patients.Update(patient);
+            UnitOfWork.Repository<Patient>().UpdateAsync(patient);
         }
 
-        public Task DeletePatientById(string id)
+        public async Task DeletePatientById(string id)
         {
             var patient = new Patient { PatientId = id };
-            _context.Patients.Attach(patient);
-            _context.Patients.Remove(patient);
-            return Task.CompletedTask;
+            await UnitOfWork.Repository<Patient>().DeleteAsync(patient);
         }
 
         public async Task DeleteAllPatients()
         {
-            await _context.Patients.ExecuteDeleteAsync();
+            await Context.Patients.ExecuteDeleteAsync(); // keep optimized bulk
         }
 
-        // ==================== STUDY ====================
+        #endregion
+
+        #region ==================== STUDY ====================
 
         public async Task AddStudy(Study study)
         {
-            await _context.Studies.AddAsync(study);
+            await UnitOfWork.Repository<Study>().AddAsync(study);
         }
 
         public async Task<Study?> GetStudyById(string id)
         {
-            return await _context.Studies
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.StudyInstanceUid == id);
+            return await UnitOfWork
+                .Repository<Study>()
+                .SingleOrDefaultAsync(x => x.StudyInstanceUid == id);
         }
 
         public async Task<List<Study>> GetStudiesByPatientId(string patientId)
         {
-            return await _context.Studies
-                .AsNoTracking()
-                .Where(x => x.PatientId == patientId)
-                .ToListAsync();
+            return await UnitOfWork
+                .Repository<Study>()
+                .GetFilteredAsync(x => x.PatientId == patientId);
         }
 
         public async Task<List<Study>> GetAllStudies()
         {
-            return await _context.Studies
-                .AsNoTracking()
-                .ToListAsync();
+            return await UnitOfWork
+                .Repository<Study>()
+                .GetAllAsync();
         }
 
-        // 🔥 FULLY OPTIMIZED (Single SQL Query)
+        // 🔥 KEEP COMPLEX QUERY DIRECT (Best Practice)
         public async Task<List<StudyView>> GetAllStudyView()
         {
-            return await _context.Studies
+            return await Context.Studies
                 .AsNoTracking()
                 .Select(s => new StudyView
                 {
@@ -101,19 +93,16 @@ namespace PacsApi.DataManagement
                     StudyDate = s.StudyDate,
                     StudyDescription = s.StudyDescription,
 
-                    SeriesCount = _context.Series
-                        .Count(se => se.StudyInstanceUid == s.StudyInstanceUid),
-
-                    ImageCount = _context.Images
-                        .Count(i => i.StudyInstanceUid == s.StudyInstanceUid),
+                    SeriesCount = Context.Series.Count(se => se.StudyInstanceUid == s.StudyInstanceUid),
+                    ImageCount = Context.Images.Count(i => i.StudyInstanceUid == s.StudyInstanceUid),
 
                     Modalities = string.Join(",",
-                        _context.Series
+                        Context.Series
                             .Where(se => se.StudyInstanceUid == s.StudyInstanceUid)
                             .Select(se => se.Modality)
                             .Distinct()),
 
-                    BodyPartExamined = _context.Series
+                    BodyPartExamined = Context.Series
                         .Where(se => se.StudyInstanceUid == s.StudyInstanceUid)
                         .Select(se => se.BodyPartExamined)
                         .FirstOrDefault()
@@ -123,20 +112,18 @@ namespace PacsApi.DataManagement
 
         public void UpdateStudy(Study study)
         {
-            _context.Studies.Update(study);
+            UnitOfWork.Repository<Study>().UpdateAsync(study);
         }
 
-        public Task DeleteStudyById(string id)
+        public async Task DeleteStudyById(string id)
         {
             var study = new Study { StudyInstanceUid = id };
-            _context.Studies.Attach(study);
-            _context.Studies.Remove(study);
-            return Task.CompletedTask;
+            await UnitOfWork.Repository<Study>().DeleteAsync(study);
         }
 
         public async Task<List<string>> GetStudyInstanceUidsByPatientId(string patientId)
         {
-            return await _context.Studies
+            return await Context.Studies
                 .AsNoTracking()
                 .Where(x => x.PatientId == patientId)
                 .Select(x => x.StudyInstanceUid)
@@ -145,7 +132,7 @@ namespace PacsApi.DataManagement
 
         public async Task<List<string>> GetAllStudyInstanceUids()
         {
-            return await _context.Studies
+            return await Context.Studies
                 .AsNoTracking()
                 .Select(x => x.StudyInstanceUid)
                 .ToListAsync();
@@ -153,47 +140,46 @@ namespace PacsApi.DataManagement
 
         public async Task DeleteAllStudies()
         {
-            await _context.Studies.ExecuteDeleteAsync();
+            await Context.Studies.ExecuteDeleteAsync();
         }
 
-        // ==================== SERIES ====================
+        #endregion
+
+        #region ==================== SERIES ====================
 
         public async Task AddSeries(Series series)
         {
-            await _context.Series.AddAsync(series);
+            await UnitOfWork.Repository<Series>().AddAsync(series);
         }
 
         public async Task<Series?> GetSeriesById(string id)
         {
-            return await _context.Series
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.SeriesInstanceUid == id);
+            return await UnitOfWork
+                .Repository<Series>()
+                .SingleOrDefaultAsync(x => x.SeriesInstanceUid == id);
         }
 
         public async Task<List<Series>> GetSeriesByStudyInstanceUid(string studyInstanceUid)
         {
-            return await _context.Series
-                .AsNoTracking()
-                .Where(x => x.StudyInstanceUid == studyInstanceUid)
-                .ToListAsync();
+            return await UnitOfWork
+                .Repository<Series>()
+                .GetFilteredAsync(x => x.StudyInstanceUid == studyInstanceUid);
         }
 
         public void UpdateSeries(Series series)
         {
-            _context.Series.Update(series);
+            UnitOfWork.Repository<Series>().UpdateAsync(series);
         }
 
-        public Task DeleteSeriesById(string id)
+        public async Task DeleteSeriesById(string id)
         {
             var series = new Series { SeriesInstanceUid = id };
-            _context.Series.Attach(series);
-            _context.Series.Remove(series);
-            return Task.CompletedTask;
+            await UnitOfWork.Repository<Series>().DeleteAsync(series);
         }
 
         public async Task<List<string>> GetAllSeriesInstanceUids()
         {
-            return await _context.Series
+            return await Context.Series
                 .AsNoTracking()
                 .Select(x => x.SeriesInstanceUid)
                 .ToListAsync();
@@ -201,7 +187,7 @@ namespace PacsApi.DataManagement
 
         public async Task<List<string>> GetSeriesInstanceUidsByStudyInstanceUid(string studyInstanceUid)
         {
-            return await _context.Series
+            return await Context.Series
                 .AsNoTracking()
                 .Where(x => x.StudyInstanceUid == studyInstanceUid)
                 .Select(x => x.SeriesInstanceUid)
@@ -210,33 +196,35 @@ namespace PacsApi.DataManagement
 
         public async Task DeleteAllSeries()
         {
-            await _context.Series.ExecuteDeleteAsync();
+            await Context.Series.ExecuteDeleteAsync();
         }
 
-        // ==================== IMAGE ====================
+        #endregion
+
+        #region ==================== IMAGE ====================
 
         public async Task AddImage(Image image)
         {
-            await _context.Images.AddAsync(image);
+            await UnitOfWork.Repository<Image>().AddAsync(image);
         }
 
         public async Task<Image?> GetImageBySopInstanceUid(string sopInstanceUid)
         {
-            return await _context.Images
-                .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.SopInstanceUid == sopInstanceUid);
+            return await UnitOfWork
+                .Repository<Image>()
+                .SingleOrDefaultAsync(x => x.SopInstanceUid == sopInstanceUid);
         }
 
         public async Task<bool> ImageExist(string sopInstanceUid)
         {
-            return await _context.Images
-                .AsNoTracking()
+            return await UnitOfWork
+                .Repository<Image>()
                 .AnyAsync(x => x.SopInstanceUid == sopInstanceUid);
         }
 
         public async Task<List<Image>> GetImagesBySeriesInstanceUid(string seriesInstanceUid)
         {
-            return await _context.Images
+            return await Context.Images
                 .AsNoTracking()
                 .Where(x => x.SeriesInstanceUid == seriesInstanceUid)
                 .OrderBy(x => x.InstanceNumber)
@@ -245,7 +233,7 @@ namespace PacsApi.DataManagement
 
         public async Task<List<Image>> GetImagesByStudyInstanceUid(string studyInstanceUid)
         {
-            return await _context.Images
+            return await Context.Images
                 .AsNoTracking()
                 .Where(x => x.StudyInstanceUid == studyInstanceUid)
                 .OrderBy(x => x.InstanceNumber)
@@ -254,14 +242,14 @@ namespace PacsApi.DataManagement
 
         public async Task<List<Image>> GetAllImages()
         {
-            return await _context.Images
-                .AsNoTracking()
-                .ToListAsync();
+            return await UnitOfWork
+                .Repository<Image>()
+                .GetAllAsync();
         }
 
         public async Task<List<ImageView>> GetImageViews(string studyInstanceUid)
         {
-            return await _context.Images
+            return await Context.Images
                 .AsNoTracking()
                 .Where(x => x.StudyInstanceUid == studyInstanceUid)
                 .OrderBy(x => x.InstanceNumber)
@@ -277,108 +265,44 @@ namespace PacsApi.DataManagement
 
         public void UpdateImage(Image image)
         {
-            _context.Images.Update(image);
+            UnitOfWork.Repository<Image>().UpdateAsync(image);
         }
 
-        public Task DeleteImageById(string sopInstanceUid)
+        public async Task DeleteImageById(string sopInstanceUid)
         {
             var image = new Image { SopInstanceUid = sopInstanceUid };
-            _context.Images.Attach(image);
-            _context.Images.Remove(image);
-            return Task.CompletedTask;
+            await UnitOfWork.Repository<Image>().DeleteAsync(image);
         }
 
         public async Task<List<string>> GetAllSopInstanceUids()
         {
-            return await _context.Images
+            return await Context.Images
                 .AsNoTracking()
                 .Select(x => x.SopInstanceUid)
-                .ToListAsync();
-        }
-
-        public async Task<List<string>> GetSopInstanceUidsBySeriesInstanceUid(string seriesInstanceUid)
-        {
-            return await _context.Images
-                .AsNoTracking()
-                .Where(x => x.SeriesInstanceUid == seriesInstanceUid)
-                .Select(x => x.SopInstanceUid)
-                .ToListAsync();
-        }
-
-        public async Task<List<string>> GetSopInstanceUidsByStudyInstanceUid(string studyInstanceUid)
-        {
-            return await _context.Images
-                .AsNoTracking()
-                .Where(x => x.StudyInstanceUid == studyInstanceUid)
-                .Select(x => x.SopInstanceUid)
-                .ToListAsync();
-        }
-
-        public async Task<List<string>> GetSopInstanceUidsByPatientId(string patientId)
-        {
-            return await _context.Images
-                .AsNoTracking()
-                .Where(x => x.PatientId == patientId)
-                .Select(x => x.SopInstanceUid)
-                .ToListAsync();
-        }
-
-        public async Task<List<string>> GetAllImagePaths()
-        {
-            return await _context.Images
-                .AsNoTracking()
-                .Select(x => x.FilePath)
-                .ToListAsync();
-        }
-
-        public async Task<string?> GetImagePath(string sopInstanceUid)
-        {
-            return await _context.Images
-                .AsNoTracking()
-                .Where(x => x.SopInstanceUid == sopInstanceUid)
-                .Select(x => x.FilePath)
-                .FirstOrDefaultAsync();
-        }
-
-        public async Task<List<string>> GetImagePathsBySeriesInstanceUid(string seriesInstanceUid)
-        {
-            return await _context.Images
-                .AsNoTracking()
-                .Where(x => x.SeriesInstanceUid == seriesInstanceUid)
-                .Select(x => x.FilePath)
                 .ToListAsync();
         }
 
         public async Task DeleteAllImages()
         {
-            await _context.Images.ExecuteDeleteAsync();
+            await Context.Images.ExecuteDeleteAsync();
         }
-
-        // ==================== SAVE ====================
-
-        public async Task SaveAsync()
+        public async Task<string?> GetImagePath(string sopInstanceUid)
         {
-            await _context.SaveChangesAsync();
+            return await Context.Images
+                .AsNoTracking()
+                .Where(x => x.SopInstanceUid == sopInstanceUid)
+                .Select(x => x.FilePath)
+                .FirstOrDefaultAsync();
+        }
+        public async Task<List<string>> GetAllImagePaths()
+        {
+            return await Context.Images
+                .AsNoTracking()
+                .Select(x => x.FilePath)
+                .ToListAsync();
         }
 
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!_disposedValue)
-            {
-                if (disposing)
-                {
-                    _context.ChangeTracker.Clear();
-                    _context.Dispose();
-                    _context = null;
-                }
+        #endregion
 
-                _disposedValue = true;
-            }
-        }
-        public void Dispose()
-        {
-            Dispose(disposing: true);
-            GC.SuppressFinalize(this);
-        }
     }
 }

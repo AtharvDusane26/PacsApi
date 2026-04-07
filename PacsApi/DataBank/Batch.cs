@@ -32,20 +32,19 @@ namespace PacsApi.DataBank
             get => _isCompleted;
             internal set => _isCompleted = value;
         }
-        public void Create(List<IFormFile> files)
+        public async Task Create(List<IFormFile> files)
         {
-            
-            foreach (var file in files)
-            {
-                using var ms = new MemoryStream();
-                file.CopyTo(ms);
-
-                var bytes = ms.ToArray();
-
-                var stream = new MemoryStream(bytes); // 🔥 safe copy
-
-                _dicomStreams.Add(new Bucket(stream));
-            }
+            await Parallel.ForEachAsync(files, async (file, ct) =>
+              {
+                  using var ms = new MemoryStream();
+                  await file.CopyToAsync(ms, ct);
+                  var bytes = ms.ToArray();
+                  var stream = new MemoryStream(bytes); // 🔥 safe copy
+                  lock (_dicomStreams)
+                  {
+                      _dicomStreams.Add(new Bucket(stream));
+                  }
+              });
         }
         public IEnumerator<Bucket> GetEnumerator()
         {
