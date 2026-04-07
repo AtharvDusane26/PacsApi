@@ -11,7 +11,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using LogLevel = Logging.LogLevel;
 
-namespace PacsApi.Services.Import
+namespace PacsApi.Services
 {
     public class ImportService : Service
     {

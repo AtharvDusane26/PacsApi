@@ -1,7 +1,6 @@
 ﻿using Logging;
 using PacsApi.Authentication;
 using PacsApi.DTO;
-using PacsApi.Services.Import;
 
 namespace PacsApi.Services
 {

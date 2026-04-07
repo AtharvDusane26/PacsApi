@@ -8,7 +8,6 @@ using PacsApi.Authentication;
 using PacsApi.Context;
 using PacsApi.DataManagement;
 using PacsApi.Services;
-using PacsApi.Services.Import;
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -2,7 +2,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PacsApi.Services;
-using PacsApi.Services.Import;
 
 namespace PacsApi.Controllers
 {
