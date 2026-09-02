@@ -11,11 +11,11 @@ using PacsApi.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+GeneralSettings.Initialize(builder.Configuration);
 
 // ✅ OPTIONAL (keep only if you still need default DB usage)
 builder.Services.AddDbContext<PacsDbContext>(options =>
     options.UseSqlServer($"{GeneralSettings.ConnectionString}"));
-
 // ============================
 // 🔥 NEW ARCHITECTURE SERVICES
 // ============================
